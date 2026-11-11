@@ -1474,3 +1474,251 @@ input:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+.results-column {
+  min-width: 0;
+}
+
+.results-column > .product-grid {
+  margin-top: 13px;
+}
+
+.results-message {
+  display: flex;
+  min-height: 186px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed #dfe3d9;
+  border-radius: 8px;
+  background: #f7f7f1;
+  color: #788276;
+  text-align: center;
+  padding: 22px;
+}
+
+.results-message > svg {
+  width: 22px;
+  margin-bottom: 4px;
+  color: #7d9c7d;
+}
+
+.results-message strong {
+  color: #536454;
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
+.results-message span {
+  font-size: 9px;
+}
+
+.loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #d5dfd3;
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin 750ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.offline-banner,
+.recommendation-source {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #e8dfd1;
+  border-radius: 6px;
+  background: #fbf5eb;
+  padding: 12px 14px;
+}
+
+.offline-banner > strong,
+.recommendation-source > span {
+  color: #916b42;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.offline-banner > span,
+.recommendation-source > p {
+  margin: 0;
+  color: #797e75;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.recommendation-source {
+  border-color: #e2e8de;
+  background: #f3f5ef;
+}
+
+.recommendation-source > span {
+  color: #5d795f;
+}
+
+.live-product-image {
+  display: grid;
+  overflow: hidden;
+  aspect-ratio: 1.13;
+  place-items: center;
+  border-radius: 5px;
+  background: #f0f1eb;
+}
+
+.live-product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.live-image-empty {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  color: #7f8a7c;
+  font-size: 9px;
+}
+
+.live-image-empty svg {
+  width: 24px;
+}
+
+.live-description {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 30px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-height: 1.55;
+}
+
+.availability {
+  margin: 9px 0 0;
+  color: #65816a;
+  font-size: 8px;
+}
+
+.recommendation-reason {
+  min-height: 53px;
+  border-left: 2px solid #99ae92;
+  margin-top: 12px;
+  background: #f5f6f1;
+  padding: 8px 9px;
+}
+
+.recommendation-reason > span {
+  color: #6a8067;
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.recommendation-reason p {
+  margin: 4px 0 0;
+  color: #747d72;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.merchant-link {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #dfe6dc;
+  border-radius: 4px;
+  margin-top: 10px;
+  color: #40644d;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 0 9px;
+}
+
+a.merchant-link:hover {
+  border-color: #afc1af;
+  background: #f4f6f1;
+}
+
+.merchant-link--disabled {
+  color: #92978e;
+}
+
+.sandbox-checkout {
+  border-top: 1px solid #dce2d8;
+  margin-top: 17px;
+  padding-top: 15px;
+}
+
+.sandbox-checkout-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.sandbox-checkout-heading .step-icon {
+  width: 33px;
+  height: 33px;
+  flex: 0 0 auto;
+  margin: 0;
+  border-radius: 9px;
+  font-size: 19px;
+}
+
+.sandbox-checkout-heading h4 {
+  margin: 0;
+  color: #4a604d;
+  font-size: 10px;
+}
+
+.sandbox-checkout-heading p {
+  margin: 4px 0 0;
+  color: #848d81;
+  font-size: 8px;
+}
+
+.sandbox-checkout-notice {
+  border-radius: 4px;
+  margin: 10px 0;
+  background: #fffaf0;
+  color: #826a45;
+  font-size: 8px;
+  line-height: 1.6;
+  padding: 8px;
+}
+
+.checkout-status {
+  margin: 9px 0;
+  color: #788276;
+  font-size: 8px;
+  line-height: 1.6;
+}
+
+.checkout-status--success {
+  color: #3e6c4d;
+}
+
+.checkout-status--error {
+  color: #a55343;
+}
+
+.checkout-retry {
+  border: 1px solid #c9d6c6;
+  border-radius: 4px;
+  background: #f6f7f2;
+  color: #49624d;
+  cursor: pointer;
+  font-size: 8px;
+  padding: 7px 9px;
+}
+
+.paypal-button-container,
+.sandbox-checkout iframe {
+  max-width: 100%;
+}

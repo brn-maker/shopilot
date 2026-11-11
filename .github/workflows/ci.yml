@@ -1,0 +1,57 @@
+name: Shopilot CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  paypal-sandbox-smoke:
+    name: Optional PayPal Sandbox credential smoke test
+    needs: quality
+    if: needs.quality.result == 'success'
+    runs-on: ubuntu-latest
+    env:
+      PAYPAL_CLIENT_ID: ${{ secrets.PAYPAL_CLIENT_ID }}
+      PAYPAL_CLIENT_SECRET: ${{ secrets.PAYPAL_CLIENT_SECRET }}
+    steps:
+      - name: Check whether Sandbox credentials are configured
+        id: gate
+        shell: bash
+        run: |
+          if [[ -n "$PAYPAL_CLIENT_ID" && -n "$PAYPAL_CLIENT_SECRET" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping optional PayPal Sandbox smoke test."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        if: steps.gate.outputs.enabled == 'true'
+      - run: npm run test:sandbox
+        if: steps.gate.outputs.enabled == 'true'

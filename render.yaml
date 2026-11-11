@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: shopilot
+    runtime: node
+    branch: main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: off

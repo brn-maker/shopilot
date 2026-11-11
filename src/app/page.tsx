@@ -1,7 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useReducer, useState } from "react";
 import type { FormEvent } from "react";
+import { z } from "zod";
+import PayPalSandboxCheckout from "./paypal-sandbox-checkout";
+import type {
+  ProductCandidate,
+  ProductRecommendation,
+  RecommendationSource,
+} from "@/server/integrations/contracts";
+import { recommendationLabel } from "./recommendation-label";
+import { savedSearchReducer } from "./search-state";
 
 type Product = {
   id: string;
@@ -14,7 +23,7 @@ type Product = {
   note: string;
 };
 
-const products: Product[] = [
+const fallbackProducts: Product[] = [
   {
     id: "weekender",
     name: "The Weekender Tote",
@@ -79,31 +88,288 @@ function ProductArtwork({ product }: { product: Product }) {
       <span className={`art-object art-object--${product.art}`} />
       <Sparkle className="art-sparkle art-sparkle--one" />
       <Sparkle className="art-sparkle art-sparkle--two" />
-      <span className="art-caption">SHOPILOT / OBJECT STUDY 0{products.indexOf(product) + 1}</span>
+      <span className="art-caption">SHOPILOT / OBJECT STUDY 0{fallbackProducts.indexOf(product) + 1}</span>
     </div>
   );
 }
 
+function OfflineProductCard({
+  product,
+  index,
+  selected,
+  onToggle,
+}: {
+  product: Product;
+  index: number;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <article className="product-card">
+      <div className="card-image-wrap">
+        <ProductArtwork product={product} />
+        <span className="placeholder-label">OFFLINE PLACEHOLDER</span>
+        <button
+          aria-label={`${selected ? "Remove" : "Add"} ${product.name} ${selected ? "from" : "to"} your edit`}
+          aria-pressed={selected}
+          className={`save-button${selected ? " is-saved" : ""}`}
+          onClick={onToggle}
+          type="button"
+        >
+          {selected ? "✓" : "+"}
+        </button>
+        {index === 0 && <span className="pick-label">SAMPLE FIND</span>}
+      </div>
+      <div className="product-info">
+        <div className="product-category">{product.category}</div>
+        <div className="product-title-row">
+          <h3>{product.name}</h3>
+          <span>{product.price}</span>
+        </div>
+        <p>{product.detail}</p>
+        <div className="product-note"><Sparkle /> {product.note}</div>
+        <button
+          className={`add-button${selected ? " added" : ""}`}
+          onClick={onToggle}
+          type="button"
+        >
+          {selected ? "Added to your edit" : "Add to your edit"}
+          <span>{selected ? "✓" : "+"}</span>
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function Channel3ProductCard({
+  product,
+  recommendation,
+  recommendationSource,
+  selected,
+  onToggle,
+}: {
+  product: ProductCandidate;
+  recommendation: ProductRecommendation | undefined;
+  recommendationSource: RecommendationSource;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <article className="product-card live-product-card">
+      <div className="card-image-wrap">
+        <div className="live-product-image">
+          {product.imageUrl ? (
+            // External product images are HTTPS-validated by the server; hosts are catalog-dependent.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={product.imageUrl} alt={product.title} loading="lazy" />
+          ) : (
+            <div className="live-image-empty"><Sparkle /> Product image unavailable</div>
+          )}
+        </div>
+        <span className="placeholder-label">CHANNEL3 SEARCH DATA</span>
+        <button
+          aria-label={`${selected ? "Remove" : "Add"} ${product.title} ${selected ? "from" : "to"} your edit`}
+          aria-pressed={selected}
+          className={`save-button${selected ? " is-saved" : ""}`}
+          onClick={onToggle}
+          type="button"
+        >
+          {selected ? "✓" : "+"}
+        </button>
+      </div>
+      <div className="product-info">
+        <div className="product-category">{product.offer.merchant}</div>
+        <div className="product-title-row">
+          <h3>{product.title}</h3>
+          <span>{product.offer.price.display}</span>
+        </div>
+        <p className="live-description">{product.description || "No description provided."}</p>
+        <p className="availability">
+          {product.offer.availability === "InStock" ? "In stock" : "Out of stock"}
+          {" · "}
+          {product.offer.price.currency}
+        </p>
+        <div className="recommendation-reason">
+          <span>{recommendationLabel(recommendationSource)}</span>
+          <p>{recommendation?.reason ?? "No recommendation reason was provided."}</p>
+        </div>
+        {product.offer.availability === "InStock" ? (
+          <a
+            className="merchant-link"
+            href={product.offer.affiliateUrl}
+            rel="noopener noreferrer sponsored"
+            target="_blank"
+          >
+            View at {product.offer.merchant}<span aria-hidden="true">↗</span>
+          </a>
+        ) : (
+          <span className="merchant-link merchant-link--disabled">Currently unavailable</span>
+        )}
+        <button
+          className={`add-button${selected ? " added" : ""}`}
+          onClick={onToggle}
+          type="button"
+        >
+          {selected ? "Saved to your edit" : "Save to your edit"}
+          <span>{selected ? "✓" : "+"}</span>
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+const clientSearchSchema = z
+  .object({
+    products: z.array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string(),
+        description: z.string(),
+        imageUrl: z.string().nullable(),
+        offer: z.object({
+          merchant: z.string(),
+          merchantDomain: z.string(),
+          price: z.object({
+            amount: z.number().finite().nonnegative(),
+            currency: z.string().regex(/^[A-Z]{3}$/),
+            display: z.string(),
+          }),
+          availability: z.enum(["InStock", "OutOfStock"]),
+          productUrl: z.string(),
+          affiliateUrl: z.string(),
+          maxCommissionRate: z.number().finite().min(0),
+        }),
+      }),
+    ),
+    recommendations: z.array(
+      z.object({
+        productId: z.string().min(1),
+        reason: z.string().min(1).max(180),
+      }),
+    ),
+    recommendationSource: z.enum(["deepseek", "fallback"]),
+  })
+  .strict();
+
+function parseSearchData(input: unknown): {
+  products: ProductCandidate[];
+  recommendations: ProductRecommendation[];
+  recommendationSource: RecommendationSource;
+} | null {
+  const parsed = clientSearchSchema.safeParse(input);
+  if (!parsed.success) return null;
+  if (
+    parsed.data.products.some(
+      (product) =>
+        (product.imageUrl !== null && !isHttpsUrl(product.imageUrl)) ||
+        !isHttpsUrl(product.offer.productUrl) ||
+        !isHttpsUrl(product.offer.affiliateUrl),
+    )
+  ) {
+    return null;
+  }
+  const candidateIds = new Set(parsed.data.products.map((product) => product.id));
+  if (
+    parsed.data.recommendations.some(
+      (recommendation) => !candidateIds.has(recommendation.productId),
+    )
+  ) {
+    return null;
+  }
+
+  return parsed.data;
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [submittedQuery, setSubmittedQuery] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [searchState, setSearchState] = useState<
+    "idle" | "loading" | "success" | "empty" | "error"
+  >("idle");
+  const [searchError, setSearchError] = useState("");
+  const [savedSearch, dispatchSavedSearch] = useReducer(savedSearchReducer, {
+    results: [],
+    selectedIds: [],
+  });
+  const [recommendations, setRecommendations] = useState<
+    ProductRecommendation[]
+  >([]);
+  const [recommendationSource, setRecommendationSource] =
+    useState<RecommendationSource>("fallback");
 
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
+  async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const cleanQuery = query.trim();
-    if (cleanQuery) setSubmittedQuery(cleanQuery);
+    if (cleanQuery.length < 2) return;
+
+    setSearchState("loading");
+    setSearchError("");
+    try {
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: cleanQuery }),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const errorMessage =
+          typeof payload === "object" &&
+          payload !== null &&
+          "error" in payload &&
+          typeof payload.error === "string"
+            ? payload.error
+            : "Product search is temporarily unavailable.";
+        throw new Error(errorMessage);
+      }
+
+      const data = parseSearchData(payload);
+      if (!data) {
+        throw new Error("Product search returned an invalid response.");
+      }
+
+      dispatchSavedSearch({ type: "results-replaced", results: data.products });
+      setRecommendations(data.recommendations);
+      setRecommendationSource(data.recommendationSource);
+      setSearchState(data.products.length ? "success" : "empty");
+    } catch (error) {
+      setSearchError(
+        error instanceof Error
+          ? error.message
+          : "Product search is temporarily unavailable.",
+      );
+      setSearchState("error");
+    }
   }
 
   function toggleProduct(id: string) {
-    setSelected((current) =>
-      current.includes(id)
-        ? current.filter((productId) => productId !== id)
-        : [...current, id],
-    );
+    dispatchSavedSearch({ type: "toggle", productId: id });
   }
 
-  const selectedProducts = products.filter((product) =>
+  const selected = savedSearch.selectedIds;
+  const visibleProducts =
+    searchState === "success"
+      ? savedSearch.results.map((product) => ({
+          id: product.id,
+          name: product.title,
+          price: product.offer.price.display,
+        }))
+      : searchState === "error"
+        ? fallbackProducts.map((product) => ({
+            id: product.id,
+            name: product.name,
+            price: product.price,
+          }))
+        : [];
+  const selectedProducts = visibleProducts.filter((product) =>
     selected.includes(product.id),
   );
 
@@ -124,7 +390,7 @@ export default function Home() {
           <a href="#how-it-works">How it works</a>
         </nav>
         <a className="cart-link" href="#your-edit">
-          Your edit <span className="cart-count">{selected.length}</span>
+          Your edit <span className="cart-count">{selectedProducts.length}</span>
         </a>
       </header>
 
@@ -149,11 +415,16 @@ export default function Home() {
             <input
               autoComplete="off"
               id="shopping-query"
+              maxLength={240}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="I’m looking for..."
               value={query}
             />
-            <button aria-label="Search products" type="submit">
+            <button
+              aria-label="Search products"
+              disabled={searchState === "loading" || query.trim().length < 2}
+              type="submit"
+            >
               <span>Find my edit</span>
               <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
                 <path d="M4 10h11m-4-4 4 4-4 4" stroke="currentColor" strokeWidth="1.7" />
@@ -173,9 +444,15 @@ export default function Home() {
             ))}
           </div>
           <p aria-live="polite" className="demo-notice">
-            {submittedQuery
-              ? `Demo mode: “${submittedQuery}” is ready for a future AI search.`
-              : "Demo mode · Search is a UI preview; no products are queried yet."}
+            {searchState === "loading"
+              ? "Searching Channel3 for a thoughtful edit…"
+              : searchState === "success"
+                ? `Live Channel3 results · ${recommendationSource === "deepseek" ? "DeepSeek-ranked" : "fallback-ranked"}`
+                : searchState === "empty"
+                  ? "No products found. Try a different description."
+                  : searchState === "error"
+                    ? `${searchError} Showing clearly labelled offline placeholders.`
+                    : "Live search is available when the server-side Channel3 key is configured."}
           </p>
         </div>
 
@@ -206,61 +483,88 @@ export default function Home() {
       <section aria-labelledby="discover-title" className="discover section-wrap" id="discover">
         <div className="section-heading">
           <div>
-            <div className="eyebrow"><span /> A FEW GOOD STARTING POINTS</div>
-            <h2 id="discover-title">A little edit, <em>just because.</em></h2>
+            <div className="eyebrow"><span /> YOUR SHOPPING EDIT</div>
+            <h2 id="discover-title">A little edit, <em>made for you.</em></h2>
           </div>
-          <p>These are placeholders for the finds Shopilot will bring your way.</p>
+          <p>
+            Channel3 provides product and offer details. Recommendation reasons
+            are shown separately as AI opinion.
+          </p>
         </div>
 
         <div className="discovery-layout">
-          <div className="product-grid">
-            {products.map((product, index) => {
-              const isSelected = selected.includes(product.id);
-              return (
-                <article className="product-card" key={product.id}>
-                  <div className="card-image-wrap">
-                    <ProductArtwork product={product} />
-                    <span className="placeholder-label">UI PLACEHOLDER</span>
-                    <button
-                      aria-label={`${isSelected ? "Remove" : "Add"} ${product.name} ${isSelected ? "from" : "to"} your edit`}
-                      aria-pressed={isSelected}
-                      className={`save-button${isSelected ? " is-saved" : ""}`}
-                      onClick={() => toggleProduct(product.id)}
-                      type="button"
-                    >
-                      {isSelected ? "✓" : "+"}
-                    </button>
-                    {index === 0 && <span className="pick-label">A GOOD GIFT</span>}
-                  </div>
-                  <div className="product-info">
-                    <div className="product-category">{product.category}</div>
-                    <div className="product-title-row">
-                      <h3>{product.name}</h3>
-                      <span>{product.price}</span>
-                    </div>
-                    <p>{product.detail}</p>
-                    <div className="product-note"><Sparkle /> {product.note}</div>
-                    <button
-                      className={`add-button${isSelected ? " added" : ""}`}
-                      onClick={() => toggleProduct(product.id)}
-                      type="button"
-                    >
-                      {isSelected ? "Added to your edit" : "Add to your edit"}
-                      <span>{isSelected ? "✓" : "+"}</span>
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
+          <div aria-live="polite" className="results-column">
+            {searchState === "idle" && (
+              <div className="results-message">
+                <Sparkle />
+                <strong>Start with a little about what you need.</strong>
+                <span>Your live Channel3 results will appear here.</span>
+              </div>
+            )}
+            {searchState === "loading" && (
+              <div className="results-message results-message--loading" role="status">
+                <span className="loading-spinner" />
+                <strong>Finding a few good things…</strong>
+                <span>Searching products and preparing recommendations.</span>
+              </div>
+            )}
+            {searchState === "empty" && (
+              <div className="results-message">
+                <strong>No products found just yet.</strong>
+                <span>Try a broader description or another search.</span>
+              </div>
+            )}
+            {searchState === "error" && (
+              <div className="offline-banner" role="status">
+                <strong>OFFLINE SAMPLE PRODUCTS</strong>
+                <span>{searchError} These sample cards are placeholders, not live listings.</span>
+              </div>
+            )}
+            {searchState === "success" && (
+              <div className="recommendation-source">
+                <span>{recommendationSource === "deepseek" ? "DEEPSEEK RECOMMENDATIONS" : "DETERMINISTIC FALLBACK"}</span>
+                <p>
+                  Product facts and prices below come from Channel3. Reasons are
+                  opinion only; {recommendationSource === "deepseek" ? "DeepSeek ranked these results." : "the list preserves Channel3 search order."}
+                </p>
+              </div>
+            )}
+            <div className="product-grid">
+              {searchState === "success" &&
+                savedSearch.results.map((product) => (
+                  <Channel3ProductCard
+                    key={product.id}
+                    onToggle={() => toggleProduct(product.id)}
+                    product={product}
+                    recommendation={recommendations.find(
+                      (item) => item.productId === product.id,
+                    )}
+                    recommendationSource={recommendationSource}
+                    selected={selected.includes(product.id)}
+                  />
+                ))}
+              {searchState === "error" &&
+                fallbackProducts.map((product, index) => (
+                  <OfflineProductCard
+                    index={index}
+                    key={product.id}
+                    onToggle={() => toggleProduct(product.id)}
+                    product={product}
+                    selected={selected.includes(product.id)}
+                  />
+                ))}
+            </div>
           </div>
 
           <aside aria-labelledby="edit-title" className="edit-card" id="your-edit">
             <div className="edit-topline">
               <span className="eyebrow"><span /> YOUR LITTLE LIST</span>
-              <span className="edit-count">{selected.length.toString().padStart(2, "0")}</span>
+              <span className="edit-count">{selectedProducts.length.toString().padStart(2, "0")}</span>
             </div>
             <h3 id="edit-title">Your edit<span>.</span></h3>
-            <p className="edit-intro">Keep the things that feel right. Leave the rest.</p>
+            <p className="edit-intro">
+              Save finds to revisit. Channel3 offers go to the merchant, not a Shopilot cart.
+            </p>
             {selectedProducts.length ? (
               <ul className="selected-list">
                 {selectedProducts.map((product) => (
@@ -277,15 +581,18 @@ export default function Home() {
               </div>
             )}
             <div className="edit-footer">
-              <span>Checkout experience</span>
-              <strong>Coming later with PayPal Sandbox</strong>
+              <span>Merchant handoff</span>
+              <strong>Shop at the retailer for Channel3 products.</strong>
             </div>
-            <div className="demo-pill"><span /> Demo only · no purchases</div>
+            <PayPalSandboxCheckout />
           </aside>
         </div>
-        <p className="placeholder-disclaimer">
-          Product names, artwork and prices shown here are static UI placeholders — not live listings.
-        </p>
+        {searchState === "error" && (
+          <p className="placeholder-disclaimer">
+            Product names, artwork and prices in the offline cards are static
+            placeholders — not live listings.
+          </p>
+        )}
       </section>
 
       <section aria-labelledby="steps-title" className="how-it-works" id="how-it-works">
