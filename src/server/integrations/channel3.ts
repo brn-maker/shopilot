@@ -6,6 +6,7 @@ import type { ProductCandidate } from "@/server/integrations/contracts";
 const CHANNEL3_SEARCH_URL = "https://api.trychannel3.com/v1/search";
 const SEARCH_TIMEOUT_MS = 8_000;
 const PRODUCT_LIMIT = 8;
+const MAX_SEARCH_ATTEMPTS = 2;
 
 const productSchema = z
   .object({
@@ -171,37 +172,48 @@ export async function searchChannel3(
   const apiKey = options.apiKey ?? process.env.CHANNEL3_API_KEY;
   if (!apiKey) throw new Channel3Error("not_configured");
 
-  let response: Response;
-  try {
-    response = await (options.fetcher ?? fetch)(CHANNEL3_SEARCH_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        query,
-        limit: PRODUCT_LIMIT,
-        filters: {
-          availability: ["InStock", "OutOfStock"],
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < MAX_SEARCH_ATTEMPTS; attempt += 1) {
+    try {
+      response = await (options.fetcher ?? fetch)(CHANNEL3_SEARCH_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
         },
-        config: {
-          language: "en",
-          country: "US",
-          currency: "USD",
-        },
-      }),
-      cache: "no-store",
-      signal: AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "TimeoutError") {
-      throw new Channel3Error("timeout");
+        body: JSON.stringify({
+          query,
+          limit: PRODUCT_LIMIT,
+          filters: {
+            availability: ["InStock", "OutOfStock"],
+          },
+          config: {
+            language: "en",
+            country: "US",
+            currency: "USD",
+          },
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(options.timeoutMs ?? SEARCH_TIMEOUT_MS),
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        throw new Channel3Error("timeout");
+      }
+      if (attempt === MAX_SEARCH_ATTEMPTS - 1) {
+        throw new Channel3Error("upstream");
+      }
+      continue;
     }
-    throw new Channel3Error("upstream");
+
+    if (response.ok) break;
+    if (response.status < 500 || attempt === MAX_SEARCH_ATTEMPTS - 1) {
+      throw new Channel3Error("upstream");
+    }
+    await response.body?.cancel();
   }
 
-  if (!response.ok) throw new Channel3Error("upstream");
+  if (!response?.ok) throw new Channel3Error("upstream");
 
   let body: unknown;
   try {

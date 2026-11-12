@@ -132,4 +132,27 @@ describe("Channel3 product normalization", () => {
       searchChannel3("a canvas bag", { apiKey: "test-key", fetcher }),
     ).rejects.toMatchObject({ kind: "timeout" });
   });
+
+  it("retries a transient Channel3 server error once", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ error: "temporary" }, { status: 502 }))
+      .mockResolvedValueOnce(Response.json({ products: [sampleProduct] }));
+
+    await expect(
+      searchChannel3("a canvas bag", { apiKey: "test-key", fetcher }),
+    ).resolves.toHaveLength(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a non-server Channel3 error", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ error: "unauthorized" }, { status: 401 }),
+    );
+
+    await expect(
+      searchChannel3("a canvas bag", { apiKey: "test-key", fetcher }),
+    ).rejects.toMatchObject({ kind: "upstream" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
 });
