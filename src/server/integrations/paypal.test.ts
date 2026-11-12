@@ -119,7 +119,23 @@ describe("server-priced PayPal Sandbox checkout", () => {
     ).resolves.toEqual({ orderId: "ORDER-123456789", status: "CREATED" });
   });
 
-  it("surfaces create failures with a safe error kind", async () => {
+  it("identifies OAuth and order API failures without exposing provider bodies", async () => {
+    const oauthFailure = vi.fn<typeof fetch>(async () =>
+      Response.json({ error: "provider detail" }, { status: 401 }),
+    );
+    await expect(
+      createPayPalOrder(
+        {
+          items: [{ productId: "sandbox-demo-item", quantity: 1 }],
+          requestId: "c8ef02e8-9899-4c62-9c34-3ed67d347777",
+        },
+        { config, fetcher: oauthFailure },
+      ),
+    ).rejects.toMatchObject({
+      kind: "unavailable",
+      diagnostic: { stage: "oauth-http", upstreamStatus: 401 },
+    });
+
     const fetcher = vi.fn<typeof fetch>(async (input) =>
       String(input).endsWith("/v1/oauth2/token")
         ? Response.json({ access_token: "mock-access-token" })
@@ -134,7 +150,10 @@ describe("server-priced PayPal Sandbox checkout", () => {
         },
         { config, fetcher },
       ),
-    ).rejects.toMatchObject({ kind: "unavailable" });
+    ).rejects.toMatchObject({
+      kind: "unavailable",
+      diagnostic: { stage: "paypal-api-http", upstreamStatus: 500 },
+    });
   });
 
   it("verifies and captures an approved order, then checks capture amount/status", async () => {

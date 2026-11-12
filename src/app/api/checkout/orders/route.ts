@@ -51,6 +51,12 @@ export async function POST(request: Request) {
     return Response.json(result);
   } catch (error) {
     if (error instanceof PayPalError) {
+      if (error.kind === "unavailable") {
+        console.error("PayPal Sandbox order request failed", {
+          stage: error.diagnostic?.stage ?? "unknown",
+          upstreamStatus: error.diagnostic?.upstreamStatus,
+        });
+      }
       const status =
         error.kind === "not_configured"
           ? 503

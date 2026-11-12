@@ -113,6 +113,17 @@ export class PayPalError extends Error {
       | "invalid_order"
       | "not_approved"
       | "capture_failed",
+    readonly diagnostic?: {
+      stage:
+        | "oauth-network"
+        | "oauth-http"
+        | "oauth-response"
+        | "paypal-api-network"
+        | "paypal-api-http"
+        | "paypal-api-response"
+        | "order-response-shape";
+      upstreamStatus?: number;
+    },
   ) {
     super(kind);
     this.name = "PayPalError";
@@ -219,15 +230,25 @@ async function getAccessToken(
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    throw new PayPalError("unavailable");
+    throw new PayPalError("unavailable", { stage: "oauth-network" });
   }
 
-  if (!response.ok) throw new PayPalError("unavailable");
+  if (!response.ok) {
+    throw new PayPalError("unavailable", {
+      stage: "oauth-http",
+      upstreamStatus: response.status,
+    });
+  }
   const tokenResult: unknown = await response.json().catch(() => null);
   const token = z
     .object({ access_token: z.string().min(1) })
     .safeParse(tokenResult);
-  if (!token.success) throw new PayPalError("unavailable");
+  if (!token.success) {
+    throw new PayPalError("unavailable", {
+      stage: "oauth-response",
+      upstreamStatus: response.status,
+    });
+  }
   return token.data.access_token;
 }
 
@@ -252,12 +273,20 @@ async function paypalRequest(
       signal: AbortSignal.timeout(10_000),
     });
   } catch {
-    throw new PayPalError("unavailable");
+    throw new PayPalError("unavailable", { stage: "paypal-api-network" });
   }
 
-  if (!response.ok) throw new PayPalError("unavailable");
+  if (!response.ok) {
+    throw new PayPalError("unavailable", {
+      stage: "paypal-api-http",
+      upstreamStatus: response.status,
+    });
+  }
   return response.json().catch(() => {
-    throw new PayPalError("unavailable");
+    throw new PayPalError("unavailable", {
+      stage: "paypal-api-response",
+      upstreamStatus: response.status,
+    });
   });
 }
 
@@ -286,7 +315,9 @@ export async function createPayPalOrder(
     body: JSON.stringify(buildPayPalOrderPayload(cart.data.items)),
   }, config.baseUrl);
   const parsed = orderCreatedSchema.safeParse(body);
-  if (!parsed.success) throw new PayPalError("unavailable");
+  if (!parsed.success) {
+    throw new PayPalError("unavailable", { stage: "order-response-shape" });
+  }
   return { orderId: parsed.data.id, status: "CREATED" };
 }
 
